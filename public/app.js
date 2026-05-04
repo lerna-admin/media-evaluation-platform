@@ -3,7 +3,11 @@ const state = {
   selected: null,
   remoteResults: [],
   remoteSearchTimer: null,
-  lastRemoteQuery: ''
+  lastRemoteQuery: '',
+  playback: {
+    season: 1,
+    episode: 1
+  }
 };
 
 const elements = {
@@ -82,6 +86,7 @@ async function searchRemoteCatalog() {
     return;
   }
 
+  state.isSearching = true;
   elements.count.textContent = `No local results. Searching IMDb/TMDB for "${query}"...`;
 
   try {
@@ -90,6 +95,8 @@ async function searchRemoteCatalog() {
     renderRemoteResults(query);
   } catch (error) {
     elements.count.textContent = `Search failed: ${error.message}`;
+  } finally {
+    state.isSearching = false;
   }
 }
 
@@ -150,7 +157,13 @@ function renderCatalog() {
   bindLocalCardEvents();
 
   if (filtered.length === 0 && query.length >= 3) {
-    elements.items.innerHTML = '<div class="empty">Searching IMDb/TMDB...</div>';
+    elements.items.innerHTML = `
+      <div class="loader-card">
+        <span class="spinner"></span>
+        <strong>Searching IMDb/TMDB</strong>
+        <p>Looking for playable titles...</p>
+      </div>
+    `;
   }
 }
 
@@ -212,6 +225,8 @@ function renderDetail() {
 
   const providerPage = title.externalPages?.find((page) => page.label === 'vidapi');
   const baseEmbed = providerPage?.url ?? buildFallbackEmbed(title);
+  state.playback.season = title.season || state.playback.season || 1;
+  state.playback.episode = title.episode || state.playback.episode || 1;
   const poster = title.metadata?.posterUrl || title.posterUrl;
   const proxiedPoster = poster ? proxyImageUrl(poster) : '';
   const categories = (title.categories ?? []).join(' / ') || 'Uncategorized';
@@ -247,6 +262,16 @@ function renderDetail() {
       </div>
 
       <div class="form-grid">
+        ${isSeriesLike(title) ? `
+          <label>
+            Season
+            <input id="seasonInput" type="number" min="1" value="${escapeAttribute(state.playback.season)}" />
+          </label>
+          <label>
+            Episode
+            <input id="episodeInput" type="number" min="1" value="${escapeAttribute(state.playback.episode)}" />
+          </label>
+        ` : ''}
         <label class="wide">
           Subtitle URL (.srt/.vtt)
           <input id="subUrl" placeholder="https://example.com/subtitles/movie.srt" />
@@ -296,7 +321,9 @@ function renderDetail() {
 
   document.querySelector('#applyParams').addEventListener('click', () => applyPlayerParams(baseEmbed));
   document.querySelector('#checkEmbed').addEventListener('click', () => checkEmbed());
-  document.querySelector('#loadPlayer').addEventListener('click', () => loadPlayer(baseEmbed));
+  document.querySelector('#loadPlayer').addEventListener('click', () => loadPlayer(getCurrentEmbedUrl(baseEmbed)));
+  document.querySelector('#seasonInput')?.addEventListener('change', updateEpisodeState);
+  document.querySelector('#episodeInput')?.addEventListener('change', updateEpisodeState);
 }
 
 function loadPlayer(baseEmbed) {
@@ -314,7 +341,7 @@ function loadPlayer(baseEmbed) {
 }
 
 function applyPlayerParams(baseEmbed) {
-  const url = new URL(baseEmbed);
+  const url = new URL(getCurrentEmbedUrl(baseEmbed));
   const params = {
     sub_url: document.querySelector('#subUrl').value,
     sub_label: document.querySelector('#subLabel').value,
@@ -381,8 +408,10 @@ function displayTitle(title) {
 function buildFallbackEmbed(title) {
   const id = title.imdbId || title.tmdbId;
   if (title.type === 'movie') return `https://vaplayer.ru/embed/movie/${encodeURIComponent(id)}`;
-  if (title.type === 'episode') {
-    return `https://vaplayer.ru/embed/tv/${encodeURIComponent(id)}/${title.season}/${title.episode}`;
+  if (title.type === 'episode' || title.type === 'series') {
+    const season = title.season || state.playback.season || 1;
+    const episode = title.episode || state.playback.episode || 1;
+    return `https://vaplayer.ru/embed/tv/${encodeURIComponent(id)}/${season}/${episode}`;
   }
   return `https://vaplayer.ru/embed/tv/${encodeURIComponent(id)}`;
 }
@@ -429,6 +458,45 @@ function normalizeRemoteSelection(remote) {
     ]
   };
 }
+
+function isSeriesLike(title) {
+  return title.type === 'series' || title.type === 'episode';
+}
+
+function updateEpisodeState() {
+  state.playback.season = positiveInteger(document.querySelector('#seasonInput')?.value, 1);
+  state.playback.episode = positiveInteger(document.querySelector('#episodeInput')?.value, 1);
+  const embedUrl = getCurrentEmbedUrl(buildFallbackEmbed(state.selected));
+  document.querySelector('#embedUrl').textContent = embedUrl;
+}
+
+function getCurrentEmbedUrl(baseEmbed) {
+  if (!isSeriesLike(state.selected)) return baseEmbed;
+  const id = state.selected.imdbId || state.selected.tmdbId;
+  const season = positiveInteger(document.querySelector('#seasonInput')?.value ?? state.playback.season, 1);
+  const episode = positiveInteger(document.querySelector('#episodeInput')?.value ?? state.playback.episode, 1);
+  state.playback.season = season;
+  state.playback.episode = episode;
+  return `https://vaplayer.ru/embed/tv/${encodeURIComponent(id)}/${season}/${episode}`;
+}
+
+function positiveInteger(value, fallback) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : fallback;
+}
+
+window.addEventListener('message', (event) => {
+  if (event.data?.type !== 'PLAYER_EVENT') return;
+  if (event.data.data?.player_status !== 'completed') return;
+  if (!isSeriesLike(state.selected)) return;
+
+  state.playback.episode += 1;
+  const episodeInput = document.querySelector('#episodeInput');
+  if (episodeInput) episodeInput.value = state.playback.episode;
+  const nextUrl = getCurrentEmbedUrl(buildFallbackEmbed(state.selected));
+  loadPlayer(nextUrl);
+  document.querySelector('#embedUrl').textContent = nextUrl;
+});
 
 function escapeHtml(value) {
   return String(value ?? '')

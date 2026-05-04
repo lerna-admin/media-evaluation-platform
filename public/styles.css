@@ -462,6 +462,40 @@ h1 {
   padding: 2rem;
 }
 
+.loader-card {
+  align-items: center;
+  color: var(--muted);
+  display: grid;
+  gap: 0.6rem;
+  grid-column: 1 / -1;
+  justify-items: center;
+  min-height: 12rem;
+  text-align: center;
+}
+
+.loader-card strong {
+  color: var(--text);
+}
+
+.loader-card p {
+  margin: 0;
+}
+
+.spinner {
+  animation: spin 850ms linear infinite;
+  border: 3px solid rgba(255, 255, 255, 0.16);
+  border-top-color: var(--brand);
+  border-radius: 999px;
+  height: 2rem;
+  width: 2rem;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 code {
   color: #9ec7ff;
   overflow-wrap: anywhere;
