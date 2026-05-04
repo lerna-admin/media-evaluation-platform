@@ -33,6 +33,24 @@ export async function fetchStats() {
   return fetchJson(`${VIDAPI_LIST_BASE_URL}/imdb/api/?action=stats`);
 }
 
+export async function isPlayableEmbed(embedUrl) {
+  if (!embedUrl) return false;
+
+  try {
+    const head = await fetch(embedUrl, { method: 'HEAD', redirect: 'follow' });
+    if (head.status !== 405) return head.status !== 404 && head.ok;
+  } catch {
+    // Some providers block HEAD. Fall back to GET and only inspect status.
+  }
+
+  try {
+    const get = await fetch(embedUrl, { method: 'GET', redirect: 'follow' });
+    return get.status !== 404 && get.ok;
+  } catch {
+    return false;
+  }
+}
+
 export function normalizeMovieItem(item) {
   return {
     type: 'movie',

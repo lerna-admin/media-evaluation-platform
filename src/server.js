@@ -12,6 +12,7 @@ import {
   fetchLatestMovies,
   fetchLatestTvShows,
   fetchStats,
+  isPlayableEmbed,
   normalizeEpisodeItem,
   normalizeMovieItem,
   normalizeTvShowItem
@@ -36,7 +37,7 @@ const server = createServer(async (request, response) => {
     }
 
     if (route === 'GET /catalog') {
-      return json(response, 200, await readStore());
+      return json(response, 200, filterStoreForListing(await readStore()));
     }
 
     if (route === 'POST /catalog/categories') {
@@ -110,9 +111,10 @@ const server = createServer(async (request, response) => {
 
     if (route === 'GET /providers/search') {
       const query = requiredParam(url, 'q');
+      const results = await searchImdbSuggestions(query);
       return json(response, 200, {
         query,
-        items: await searchImdbSuggestions(query)
+        items: await filterPlayableResults(results)
       });
     }
 
@@ -170,6 +172,7 @@ const server = createServer(async (request, response) => {
       const id = String(body.imdbId || body.tmdbId || '').trim();
       const type = body.type === 'series' ? 'series' : 'movie';
       const embedUrl = type === 'movie' ? buildMovieEmbedUrl(id) : buildTvEmbedUrl(id);
+      await assertPlayable(embedUrl);
       const result = upsertProviderTitle(store, {
         type,
         imdbId: body.imdbId,
@@ -190,6 +193,7 @@ const server = createServer(async (request, response) => {
       const id = String(body.imdbId || body.tmdbId || '').trim();
       const type = body.type === 'series' ? 'series' : 'movie';
       const embedUrl = type === 'movie' ? buildMovieEmbedUrl(id) : buildTvEmbedUrl(id);
+      await assertPlayable(embedUrl);
       const result = upsertProviderTitle(store, {
         type,
         imdbId: body.imdbId,
@@ -260,6 +264,7 @@ async function importVidapiPages(type, pages) {
     for (const item of data.items ?? []) {
       const normalized = normalizeVidapiItem(type, item);
       if (!normalized.imdbId && !normalized.tmdbId) continue;
+      if (!(await isPlayableEmbed(normalized.embedUrl))) continue;
       const result = upsertProviderTitle(store, normalized);
       imported.push({
         catalogKey: result.title.catalogKey,
@@ -302,6 +307,7 @@ async function importVidapiSearch(type, query, pages) {
   const imported = [];
 
   for (const normalized of search.items) {
+    if (!(await isPlayableEmbed(normalized.embedUrl))) continue;
     const result = upsertProviderTitle(store, normalized);
     imported.push({
       catalogKey: result.title.catalogKey,
@@ -348,6 +354,7 @@ async function searchVidapi(type, query, pages) {
       ].join(' ').toLowerCase();
 
       if (haystack.includes(query) && (normalized.imdbId || normalized.tmdbId)) {
+        if (!(await isPlayableEmbed(normalized.embedUrl))) continue;
         items.push(normalized);
       }
     }
@@ -390,4 +397,42 @@ function requiredParam(url, name) {
 function queryParamsWithout(url, excluded) {
   const excludedSet = new Set(excluded);
   return Object.fromEntries([...url.searchParams.entries()].filter(([key]) => !excludedSet.has(key)));
+}
+
+function filterStoreForListing(store) {
+  const brokenUrls = new Set(
+    (store.externalPageChecks ?? [])
+      .filter((check) => check.failedBecause404)
+      .map((check) => check.url)
+  );
+
+  return {
+    ...store,
+    titles: (store.titles ?? []).filter((title) => {
+      const pages = title.externalPages ?? [];
+      return !pages.some((page) => brokenUrls.has(page.url));
+    })
+  };
+}
+
+async function filterPlayableResults(results) {
+  const playable = [];
+
+  for (const result of results) {
+    const id = result.imdbId || result.tmdbId;
+    const embedUrl = result.type === 'series' ? buildTvEmbedUrl(id) : buildMovieEmbedUrl(id);
+    if (await isPlayableEmbed(embedUrl)) {
+      playable.push(result);
+    }
+  }
+
+  return playable;
+}
+
+async function assertPlayable(embedUrl) {
+  if (await isPlayableEmbed(embedUrl)) return;
+
+  const error = new Error('Embed returned 404 or is not playable.');
+  error.status = 404;
+  throw error;
 }
