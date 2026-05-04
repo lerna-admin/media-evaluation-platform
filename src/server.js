@@ -22,6 +22,11 @@ import { searchImdbSuggestions } from './search-providers.js';
 const port = Number(process.env.PORT ?? 4000);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const publicDir = resolve(__dirname, '../public');
+const episodeListCacheByImdb = new Map();
+let epsImdbRawCache = {
+  loadedAt: 0,
+  text: ''
+};
 
 const server = createServer(async (request, response) => {
   try {
@@ -120,6 +125,20 @@ const server = createServer(async (request, response) => {
         query,
         items: await filterPlayableResults(results)
       });
+    }
+
+    if (route === 'GET /providers/vidapi/series-episodes') {
+      const imdbId = String(url.searchParams.get('imdbId') ?? '').trim();
+      const tmdbId = String(url.searchParams.get('tmdbId') ?? '').trim();
+      const pages = Math.min(positivePage(url.searchParams.get('pages')), 120);
+
+      if (!imdbId && !tmdbId) {
+        const error = new Error('imdbId or tmdbId is required.');
+        error.status = 400;
+        throw error;
+      }
+
+      return json(response, 200, await getSeriesEpisodes({ imdbId, tmdbId, pages }));
     }
 
     if (route === 'GET /providers/vidapi/embed/movie') {
@@ -495,4 +514,144 @@ async function assertPlayable(embedUrl) {
   const error = new Error('Embed returned 404 or is not playable.');
   error.status = 404;
   throw error;
+}
+
+async function getSeriesEpisodes({ imdbId, tmdbId, pages }) {
+  if (imdbId) {
+    const quickList = await getSeriesEpisodesFromIdList(imdbId);
+    if (quickList.length > 0) {
+      return {
+        imdbId,
+        tmdbId,
+        pagesScanned: 0,
+        episodeCount: quickList.reduce((acc, season) => acc + season.episodes.length, 0),
+        seasons: quickList
+      };
+    }
+  }
+
+  const matches = [];
+  const seasons = new Map();
+
+  for (let page = 1; page <= pages; page++) {
+    const data = await fetchLatestEpisodes(page);
+
+    for (const item of data.items ?? []) {
+      const normalized = normalizeEpisodeItem(item);
+      const sameImdb = imdbId && normalized.imdbId && normalized.imdbId === imdbId;
+      const sameTmdb = tmdbId && normalized.tmdbId && normalized.tmdbId === tmdbId;
+      if (!sameImdb && !sameTmdb) continue;
+
+      const season = Number(normalized.season || 1);
+      const episode = Number(normalized.episode || 1);
+      const seasonEntries = seasons.get(season) ?? [];
+      seasonEntries.push({
+        season,
+        episode,
+        title: normalized.title || `Episode ${episode}`,
+        airDate: normalized.airDate || '',
+        embedUrl: normalized.embedUrl || ''
+      });
+      seasons.set(season, seasonEntries);
+      matches.push(normalized);
+    }
+
+    if (page >= Number(data.total_pages ?? page)) break;
+  }
+
+  let seasonList = [...seasons.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([seasonNumber, episodes]) => ({
+      seasonNumber,
+      episodes: episodes
+        .sort((a, b) => a.episode - b.episode)
+        .map((entry) => ({
+          season: entry.season,
+          episode: entry.episode,
+          title: entry.title,
+          airDate: entry.airDate,
+          embedUrl: entry.embedUrl
+        }))
+    }));
+
+  if (seasonList.length === 0 && imdbId) {
+    seasonList = await getSeriesEpisodesFromIdList(imdbId);
+  }
+
+  return {
+    imdbId,
+    tmdbId,
+    pagesScanned: pages,
+    episodeCount: matches.length,
+    seasons: seasonList
+  };
+}
+
+async function getSeriesEpisodesFromIdList(imdbId) {
+  const cached = episodeListCacheByImdb.get(imdbId);
+  if (cached && Date.now() - cached.loadedAt < 60 * 60 * 1000) {
+    return cached.seasons;
+  }
+
+  try {
+    const text = await getEpsImdbText();
+    const bySeason = new Map();
+    const prefix = `${imdbId}_`;
+
+    for (const line of text.split('\n')) {
+      const value = line.trim();
+      if (!value.startsWith(prefix)) continue;
+      const suffix = value.slice(prefix.length);
+      const [seasonRaw, episodeRaw] = suffix.split('x');
+      const season = Number(seasonRaw);
+      const episode = Number(episodeRaw);
+      if (!Number.isInteger(season) || !Number.isInteger(episode) || season < 1 || episode < 1) continue;
+
+      const entries = bySeason.get(season) ?? [];
+      entries.push({
+        season,
+        episode,
+        title: `Episode ${episode}`,
+        airDate: '',
+        embedUrl: buildTvEmbedUrl(imdbId, season, episode)
+      });
+      bySeason.set(season, entries);
+    }
+
+    const seasons = [...bySeason.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([seasonNumber, episodes]) => ({
+        seasonNumber,
+        episodes: episodes.sort((a, b) => a.episode - b.episode)
+      }));
+
+    episodeListCacheByImdb.set(imdbId, {
+      loadedAt: Date.now(),
+      seasons
+    });
+    return seasons;
+  } catch {
+    return [];
+  }
+}
+
+async function getEpsImdbText() {
+  const oneHour = 60 * 60 * 1000;
+  if (epsImdbRawCache.text && Date.now() - epsImdbRawCache.loadedAt < oneHour) {
+    return epsImdbRawCache.text;
+  }
+
+  const response = await fetch('https://vidapi.ru/ids/eps_list_imdb.txt', {
+    headers: { accept: 'text/plain' }
+  });
+  if (!response.ok) {
+    throw new Error(`VidAPI ids request failed with HTTP ${response.status}`);
+  }
+
+  const text = await response.text();
+  epsImdbRawCache = {
+    loadedAt: Date.now(),
+    text
+  };
+  return text;
 }
