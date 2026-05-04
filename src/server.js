@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
+import { dirname, extname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { checkExternalPage, createCategory, createTitle, notFound, upsertProviderTitle } from './catalog.js';
 import { readStore, writeStore } from './storage.js';
 import {
@@ -15,11 +18,17 @@ import {
 } from './vidapi.js';
 
 const port = Number(process.env.PORT ?? 4000);
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const publicDir = resolve(__dirname, '../public');
 
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url, `http://${request.headers.host}`);
     const route = `${request.method} ${url.pathname}`;
+
+    if (request.method === 'GET' && (url.pathname === '/' || url.pathname.startsWith('/public/'))) {
+      return servePublic(response, url.pathname === '/' ? '/index.html' : url.pathname.replace('/public', ''));
+    }
 
     if (route === 'GET /health') {
       return json(response, 200, { status: 'ok' });
@@ -153,6 +162,26 @@ function json(response, status, payload) {
     'content-type': 'application/json; charset=utf-8'
   });
   response.end(`${JSON.stringify(payload, null, 2)}\n`);
+}
+
+async function servePublic(response, pathname) {
+  const safePath = pathname.replace(/^\/+/, '');
+  const filePath = resolve(publicDir, safePath);
+  if (!filePath.startsWith(publicDir)) throw notFound('Static file not found.');
+
+  const content = await readFile(filePath);
+  response.writeHead(200, {
+    'content-type': contentType(filePath)
+  });
+  response.end(content);
+}
+
+function contentType(filePath) {
+  const extension = extname(filePath);
+  if (extension === '.html') return 'text/html; charset=utf-8';
+  if (extension === '.css') return 'text/css; charset=utf-8';
+  if (extension === '.js') return 'text/javascript; charset=utf-8';
+  return 'application/octet-stream';
 }
 
 async function importVidapiPages(type, pages) {

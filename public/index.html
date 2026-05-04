@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Media Evaluation Platform</title>
+    <link rel="stylesheet" href="/public/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Lerna Soft</p>
+          <h1>Media Catalog</h1>
+          <p class="lede">Browse VidAPI movies, series, and episodes by IMDb/TMDB ID. Generate embeds with optional subtitle parameters.</p>
+        </div>
+        <div class="stats" id="stats">Loading provider stats...</div>
+      </section>
+
+      <section class="toolbar">
+        <div class="imports">
+          <label>
+            Pages
+            <input id="pages" type="number" min="1" max="10" value="1" />
+          </label>
+          <button data-import="latest-movies">Import Movies</button>
+          <button data-import="latest-tvshows">Import Series</button>
+          <button data-import="latest-episodes">Import Episodes</button>
+        </div>
+        <div class="filters">
+          <input id="search" type="search" placeholder="Search title, IMDb, TMDB..." />
+          <select id="typeFilter">
+            <option value="all">All</option>
+            <option value="movie">Movies</option>
+            <option value="series">Series</option>
+            <option value="episode">Episodes</option>
+          </select>
+        </div>
+      </section>
+
+      <section class="layout">
+        <aside class="catalog">
+          <div class="catalog-header">
+            <h2>Catalog</h2>
+            <span id="count">0 items</span>
+          </div>
+          <div id="items" class="items"></div>
+        </aside>
+
+        <section class="detail" id="detail">
+          <div class="empty">Import or select a title to preview the embed.</div>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="/public/app.js"></script>
+  </body>
+</html>
