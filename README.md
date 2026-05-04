@@ -79,6 +79,11 @@ POST /catalog/import/search-result
   width="100%"
   height="100%"
   frameborder="0"
+  allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+  sandbox="allow-scripts allow-same-origin allow-presentation"
+  referrerpolicy="strict-origin-when-cross-origin"
   allowfullscreen
 ></iframe>
 ```
+
+The iframe intentionally does not include `allow-popups`, `allow-top-navigation`, or `allow-forms`. This blocks popups and prevents the embedded player from navigating the parent application.

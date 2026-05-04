@@ -240,7 +240,16 @@ function renderDetail() {
 
 function loadPlayer(baseEmbed) {
   document.querySelector('#playerBox').classList.remove('player-standby');
-  document.querySelector('#playerBox').innerHTML = `<iframe id="player" src="${escapeAttribute(baseEmbed)}" allowfullscreen></iframe>`;
+  document.querySelector('#playerBox').innerHTML = `
+    <iframe
+      id="player"
+      src="${escapeAttribute(baseEmbed)}"
+      allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+      sandbox="allow-scripts allow-same-origin allow-presentation"
+      referrerpolicy="strict-origin-when-cross-origin"
+      allowfullscreen
+    ></iframe>
+  `;
 }
 
 function applyPlayerParams(baseEmbed) {

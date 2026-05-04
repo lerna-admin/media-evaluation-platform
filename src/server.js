@@ -229,6 +229,7 @@ async function readJson(request) {
 
 function json(response, status, payload) {
   response.writeHead(status, {
+    ...securityHeaders(),
     'content-type': 'application/json; charset=utf-8'
   });
   response.end(`${JSON.stringify(payload, null, 2)}\n`);
@@ -241,9 +242,28 @@ async function servePublic(response, pathname) {
 
   const content = await readFile(filePath);
   response.writeHead(200, {
+    ...securityHeaders(),
     'content-type': contentType(filePath)
   });
   response.end(content);
+}
+
+function securityHeaders() {
+  return {
+    'content-security-policy': [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' https: data:",
+      "connect-src 'self'",
+      "frame-src https://vaplayer.ru",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "frame-ancestors 'self'"
+    ].join('; '),
+    'referrer-policy': 'strict-origin-when-cross-origin',
+    'x-content-type-options': 'nosniff'
+  };
 }
 
 function contentType(filePath) {
