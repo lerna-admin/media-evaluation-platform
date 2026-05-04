@@ -123,11 +123,15 @@ function renderCatalog() {
   elements.items.innerHTML = filtered
     .map((title) => {
       const active = state.selected?.catalogKey === title.catalogKey ? ' active' : '';
+      const poster = title.metadata?.posterUrl;
       return `
         <article class="item${active}" data-key="${escapeHtml(title.catalogKey)}">
-          <strong>${escapeHtml(displayTitle(title))}</strong>
-          <span class="meta">${escapeHtml(title.type)} | IMDb: ${escapeHtml(title.imdbId || '-')} | TMDB: ${escapeHtml(title.tmdbId || '-')}</span>
-          <span class="meta">${escapeHtml((title.categories ?? []).join(', ') || 'no category')}</span>
+          ${poster ? `<img class="item-poster" src="${escapeAttribute(poster)}" alt="" loading="lazy" />` : '<div class="item-poster placeholder"></div>'}
+          <div>
+            <strong>${escapeHtml(displayTitle(title))}</strong>
+            <span class="meta">${escapeHtml(title.type)} | ${escapeHtml(title.year ?? '')}</span>
+            <span class="meta">${escapeHtml((title.categories ?? []).slice(0, 2).join(', ') || title.imdbId || title.tmdbId || 'no id')}</span>
+          </div>
         </article>
       `;
     })
@@ -152,16 +156,36 @@ function renderDetail() {
   const providerPage = title.externalPages?.find((page) => page.label === 'vidapi');
   const baseEmbed = providerPage?.url ?? buildFallbackEmbed(title);
   const poster = title.metadata?.posterUrl;
+  const categories = (title.categories ?? []).join(' / ') || 'Uncategorized';
+  const rating = title.metadata?.rating ? `${title.metadata.rating} rating` : 'No rating yet';
+  const description = title.metadata?.airDate
+    ? `Air date: ${title.metadata.airDate}`
+    : `Catalog entry sourced by ${title.metadata?.provider ?? 'manual'} using IMDb/TMDB identifiers.`;
 
   elements.detail.innerHTML = `
     <div class="detail-inner">
-      <div>
-        <h2>${escapeHtml(displayTitle(title))}</h2>
-        <p class="meta">${escapeHtml(title.catalogKey)} | ${escapeHtml(title.year ?? '')}</p>
+      <section class="title-hero" style="${poster ? `--poster: url('${escapeAttribute(poster)}')` : ''}">
+        <div class="title-copy">
+          <span class="pill">${escapeHtml(title.type)}</span>
+          <h2>${escapeHtml(displayTitle(title))}</h2>
+          <p class="title-meta">${escapeHtml([title.year, rating, categories].filter(Boolean).join('  |  '))}</p>
+          <p class="title-description">${escapeHtml(description)}</p>
+          <div class="id-row">
+            <span>IMDb: ${escapeHtml(title.imdbId || '-')}</span>
+            <span>TMDB: ${escapeHtml(title.tmdbId || '-')}</span>
+          </div>
+          <div class="actions hero-actions">
+            <button id="loadPlayer">Play</button>
+            <button class="secondary" id="checkEmbed">Check Not 404</button>
+          </div>
+        </div>
       </div>
 
-      <div class="player">
-        <iframe id="player" src="${escapeAttribute(baseEmbed)}" allowfullscreen></iframe>
+      <div class="player player-standby" id="playerBox">
+        <div>
+          <strong>Ready to play</strong>
+          <p>Review the title information first. Press Play to load the VidAPI iframe.</p>
+        </div>
       </div>
 
       <div class="form-grid">
@@ -193,7 +217,6 @@ function renderDetail() {
 
       <div class="actions">
         <button id="applyParams">Apply Player Params</button>
-        <button class="secondary" id="checkEmbed">Check Not 404</button>
       </div>
 
       <div class="notice">
@@ -206,6 +229,12 @@ function renderDetail() {
 
   document.querySelector('#applyParams').addEventListener('click', () => applyPlayerParams(baseEmbed));
   document.querySelector('#checkEmbed').addEventListener('click', () => checkEmbed());
+  document.querySelector('#loadPlayer').addEventListener('click', () => loadPlayer(baseEmbed));
+}
+
+function loadPlayer(baseEmbed) {
+  document.querySelector('#playerBox').classList.remove('player-standby');
+  document.querySelector('#playerBox').innerHTML = `<iframe id="player" src="${escapeAttribute(baseEmbed)}" allowfullscreen></iframe>`;
 }
 
 function applyPlayerParams(baseEmbed) {
@@ -223,7 +252,11 @@ function applyPlayerParams(baseEmbed) {
     if (value) url.searchParams.set(key, value);
   }
 
-  document.querySelector('#player').src = url.toString();
+  if (!document.querySelector('#player')) {
+    loadPlayer(url.toString());
+  } else {
+    document.querySelector('#player').src = url.toString();
+  }
   document.querySelector('#embedUrl').textContent = url.toString();
 }
 
