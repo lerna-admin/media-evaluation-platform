@@ -59,11 +59,16 @@ GET  /providers/vidapi/stats
 GET  /providers/vidapi/movies/latest?page=1
 GET  /providers/vidapi/tvshows/latest?page=1
 GET  /providers/vidapi/episodes/latest?page=1
+GET  /providers/vidapi/search?q=avengers&type=movie&pages=100
+GET  /providers/search?q=avengers
 GET  /providers/vidapi/embed/movie?id=tt23779058
 GET  /providers/vidapi/embed/tv?id=tt13159924&season=1&episode=1
 POST /catalog/import/vidapi/latest-movies
 POST /catalog/import/vidapi/latest-tvshows
 POST /catalog/import/vidapi/latest-episodes
+POST /catalog/import/vidapi/search
+POST /catalog/import/manual
+POST /catalog/import/search-result
 ```
 
 ## VidAPI Embed Example

@@ -16,6 +16,7 @@ import {
   normalizeMovieItem,
   normalizeTvShowItem
 } from './vidapi.js';
+import { searchImdbSuggestions } from './search-providers.js';
 
 const port = Number(process.env.PORT ?? 4000);
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -100,6 +101,21 @@ const server = createServer(async (request, response) => {
       return json(response, 200, await fetchLatestEpisodes(page));
     }
 
+    if (route === 'GET /providers/vidapi/search') {
+      const query = requiredParam(url, 'q').toLowerCase();
+      const type = url.searchParams.get('type') ?? 'movie';
+      const maxPages = Math.min(positivePage(url.searchParams.get('pages')), 100);
+      return json(response, 200, await searchVidapi(type, query, maxPages));
+    }
+
+    if (route === 'GET /providers/search') {
+      const query = requiredParam(url, 'q');
+      return json(response, 200, {
+        query,
+        items: await searchImdbSuggestions(query)
+      });
+    }
+
     if (route === 'GET /providers/vidapi/embed/movie') {
       const id = requiredParam(url, 'id');
       return json(response, 200, {
@@ -136,6 +152,56 @@ const server = createServer(async (request, response) => {
       const body = await readJson(request);
       const result = await importVidapiPages('episode', positivePage(body.pages ?? 1));
       return json(response, 201, result);
+    }
+
+    if (route === 'POST /catalog/import/vidapi/search') {
+      const body = await readJson(request);
+      const result = await importVidapiSearch(
+        body.type ?? 'movie',
+        String(body.query ?? '').toLowerCase(),
+        Math.min(positivePage(body.pages ?? 25), 100)
+      );
+      return json(response, 201, result);
+    }
+
+    if (route === 'POST /catalog/import/manual') {
+      const body = await readJson(request);
+      const store = await readStore();
+      const id = String(body.imdbId || body.tmdbId || '').trim();
+      const type = body.type === 'series' ? 'series' : 'movie';
+      const embedUrl = type === 'movie' ? buildMovieEmbedUrl(id) : buildTvEmbedUrl(id);
+      const result = upsertProviderTitle(store, {
+        type,
+        imdbId: body.imdbId,
+        tmdbId: body.tmdbId,
+        title: body.title,
+        year: body.year,
+        categories: body.categories ?? [],
+        posterUrl: body.posterUrl,
+        embedUrl
+      });
+      await writeStore(store);
+      return json(response, 201, result.title);
+    }
+
+    if (route === 'POST /catalog/import/search-result') {
+      const body = await readJson(request);
+      const store = await readStore();
+      const id = String(body.imdbId || body.tmdbId || '').trim();
+      const type = body.type === 'series' ? 'series' : 'movie';
+      const embedUrl = type === 'movie' ? buildMovieEmbedUrl(id) : buildTvEmbedUrl(id);
+      const result = upsertProviderTitle(store, {
+        type,
+        imdbId: body.imdbId,
+        tmdbId: body.tmdbId,
+        title: body.title,
+        year: body.year,
+        categories: body.categories ?? [],
+        posterUrl: body.posterUrl,
+        embedUrl
+      });
+      await writeStore(store);
+      return json(response, 201, result.title);
     }
 
     throw notFound('Route not found.');
@@ -222,6 +288,76 @@ async function importVidapiPages(type, pages) {
     imported: imported.length,
     items: imported
   };
+}
+
+async function importVidapiSearch(type, query, pages) {
+  if (!query) {
+    const error = new Error('query is required.');
+    error.status = 400;
+    throw error;
+  }
+
+  const search = await searchVidapi(type, query, pages);
+  const store = await readStore();
+  const imported = [];
+
+  for (const normalized of search.items) {
+    const result = upsertProviderTitle(store, normalized);
+    imported.push({
+      catalogKey: result.title.catalogKey,
+      created: result.created
+    });
+  }
+
+  store.providerSyncs.push({
+    id: randomUUID(),
+    provider: 'vidapi',
+    type,
+    query,
+    pages,
+    imported: imported.length,
+    syncedAt: new Date().toISOString()
+  });
+
+  await writeStore(store);
+
+  return {
+    provider: 'vidapi',
+    type,
+    query,
+    pagesScanned: search.pagesScanned,
+    imported: imported.length,
+    items: imported
+  };
+}
+
+async function searchVidapi(type, query, pages) {
+  const items = [];
+  const normalizedType = ['movie', 'series', 'episode'].includes(type) ? type : 'movie';
+
+  for (let page = 1; page <= pages; page++) {
+    const data = await fetchVidapiPage(normalizedType, page);
+    for (const item of data.items ?? []) {
+      const normalized = normalizeVidapiItem(normalizedType, item);
+      const haystack = [
+        normalized.title,
+        normalized.showTitle,
+        normalized.imdbId,
+        normalized.tmdbId,
+        normalized.categories?.join(' ')
+      ].join(' ').toLowerCase();
+
+      if (haystack.includes(query) && (normalized.imdbId || normalized.tmdbId)) {
+        items.push(normalized);
+      }
+    }
+
+    if (page >= Number(data.total_pages ?? page)) {
+      return { provider: 'vidapi', type: normalizedType, query, pagesScanned: page, items };
+    }
+  }
+
+  return { provider: 'vidapi', type: normalizedType, query, pagesScanned: pages, items };
 }
 
 async function fetchVidapiPage(type, page) {

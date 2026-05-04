@@ -1,6 +1,7 @@
 const state = {
   catalog: null,
-  selected: null
+  selected: null,
+  remoteResults: []
 };
 
 const elements = {
@@ -8,6 +9,7 @@ const elements = {
   pages: document.querySelector('#pages'),
   search: document.querySelector('#search'),
   typeFilter: document.querySelector('#typeFilter'),
+  remoteSearch: document.querySelector('#remoteSearch'),
   items: document.querySelector('#items'),
   count: document.querySelector('#count'),
   detail: document.querySelector('#detail')
@@ -19,6 +21,7 @@ document.querySelectorAll('[data-import]').forEach((button) => {
 
 elements.search.addEventListener('input', renderCatalog);
 elements.typeFilter.addEventListener('change', renderCatalog);
+elements.remoteSearch.addEventListener('click', searchRemoteCatalog);
 
 await loadStats();
 await loadCatalog();
@@ -51,6 +54,51 @@ async function importCatalog(kind) {
     body: JSON.stringify({ pages })
   });
   await loadCatalog();
+}
+
+async function searchRemoteCatalog() {
+  const query = elements.search.value.trim();
+  if (!query) {
+    elements.count.textContent = 'Type a search term first';
+    return;
+  }
+
+  elements.count.textContent = `Searching IMDb/TMDB for "${query}"...`;
+
+  try {
+    const result = await api(`/providers/search?q=${encodeURIComponent(query)}`);
+    state.remoteResults = result.items ?? [];
+    renderRemoteResults(query);
+  } catch (error) {
+    elements.count.textContent = `Search failed: ${error.message}`;
+  }
+}
+
+function renderRemoteResults(query) {
+  elements.count.textContent = `${state.remoteResults.length} remote matches for "${query}"`;
+  elements.items.innerHTML = state.remoteResults
+    .map((title, index) => `
+      <article class="item" data-remote-index="${index}">
+        <strong>${escapeHtml(title.title)}</strong>
+        <span class="meta">${escapeHtml(title.type)} | IMDb: ${escapeHtml(title.imdbId || '-')} | ${escapeHtml(title.year ?? '')}</span>
+        <span class="meta">${escapeHtml(title.description || 'Remote IMDb result')}</span>
+      </article>
+    `)
+    .join('');
+
+  elements.items.querySelectorAll('[data-remote-index]').forEach((item) => {
+    item.addEventListener('click', async () => {
+      const remote = state.remoteResults[Number(item.dataset.remoteIndex)];
+      const imported = await api('/catalog/import/search-result', {
+        method: 'POST',
+        body: JSON.stringify(remote)
+      });
+      await loadCatalog();
+      state.selected = (state.catalog?.titles ?? []).find((title) => title.catalogKey === imported.catalogKey);
+      renderCatalog();
+      renderDetail();
+    });
+  });
 }
 
 function renderCatalog() {
