@@ -77,13 +77,19 @@ async function searchRemoteCatalog() {
 function renderRemoteResults(query) {
   elements.count.textContent = `${state.remoteResults.length} remote matches for "${query}"`;
   elements.items.innerHTML = state.remoteResults
-    .map((title, index) => `
-      <article class="item" data-remote-index="${index}">
-        <strong>${escapeHtml(title.title)}</strong>
-        <span class="meta">${escapeHtml(title.type)} | IMDb: ${escapeHtml(title.imdbId || '-')} | ${escapeHtml(title.year ?? '')}</span>
-        <span class="meta">${escapeHtml(title.description || 'Remote IMDb result')}</span>
-      </article>
-    `)
+    .map((title, index) => {
+      const poster = title.posterUrl;
+      return `
+        <article class="item" data-remote-index="${index}">
+          ${poster ? `<img class="item-poster" src="${escapeAttribute(poster)}" alt="" loading="lazy" referrerpolicy="no-referrer" />` : '<div class="item-poster placeholder"></div>'}
+          <div>
+            <strong>${escapeHtml(title.title)}</strong>
+            <span class="meta">${escapeHtml(title.type)} | IMDb: ${escapeHtml(title.imdbId || '-')} | ${escapeHtml(title.year ?? '')}</span>
+            <span class="meta">${escapeHtml(title.description || 'Remote IMDb result')}</span>
+          </div>
+        </article>
+      `;
+    })
     .join('');
 
   elements.items.querySelectorAll('[data-remote-index]').forEach((item) => {
@@ -126,7 +132,7 @@ function renderCatalog() {
       const poster = title.metadata?.posterUrl;
       return `
         <article class="item${active}" data-key="${escapeHtml(title.catalogKey)}">
-          ${poster ? `<img class="item-poster" src="${escapeAttribute(poster)}" alt="" loading="lazy" />` : '<div class="item-poster placeholder"></div>'}
+          ${poster ? `<img class="item-poster" src="${escapeAttribute(poster)}" alt="" loading="lazy" referrerpolicy="no-referrer" />` : '<div class="item-poster placeholder"></div>'}
           <div>
             <strong>${escapeHtml(displayTitle(title))}</strong>
             <span class="meta">${escapeHtml(title.type)} | ${escapeHtml(title.year ?? '')}</span>
