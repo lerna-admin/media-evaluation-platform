@@ -81,7 +81,7 @@ function renderRemoteResults(query) {
       const poster = title.posterUrl;
       return `
         <article class="item" data-remote-index="${index}">
-          ${poster ? `<img class="item-poster" src="${escapeAttribute(poster)}" alt="" loading="lazy" referrerpolicy="no-referrer" />` : '<div class="item-poster placeholder"></div>'}
+          ${poster ? `<img class="item-poster" src="${escapeAttribute(proxyImageUrl(poster))}" alt="" loading="lazy" />` : '<div class="item-poster placeholder"></div>'}
           <div>
             <strong>${escapeHtml(title.title)}</strong>
             <span class="meta">${escapeHtml(title.type)} | IMDb: ${escapeHtml(title.imdbId || '-')} | ${escapeHtml(title.year ?? '')}</span>
@@ -132,7 +132,7 @@ function renderCatalog() {
       const poster = title.metadata?.posterUrl;
       return `
         <article class="item${active}" data-key="${escapeHtml(title.catalogKey)}">
-          ${poster ? `<img class="item-poster" src="${escapeAttribute(poster)}" alt="" loading="lazy" referrerpolicy="no-referrer" />` : '<div class="item-poster placeholder"></div>'}
+          ${poster ? `<img class="item-poster" src="${escapeAttribute(proxyImageUrl(poster))}" alt="" loading="lazy" />` : '<div class="item-poster placeholder"></div>'}
           <div>
             <strong>${escapeHtml(displayTitle(title))}</strong>
             <span class="meta">${escapeHtml(title.type)} | ${escapeHtml(title.year ?? '')}</span>
@@ -162,6 +162,7 @@ function renderDetail() {
   const providerPage = title.externalPages?.find((page) => page.label === 'vidapi');
   const baseEmbed = providerPage?.url ?? buildFallbackEmbed(title);
   const poster = title.metadata?.posterUrl;
+  const proxiedPoster = poster ? proxyImageUrl(poster) : '';
   const categories = (title.categories ?? []).join(' / ') || 'Uncategorized';
   const rating = title.metadata?.rating ? `${title.metadata.rating} rating` : 'No rating yet';
   const description = title.metadata?.airDate
@@ -170,7 +171,7 @@ function renderDetail() {
 
   elements.detail.innerHTML = `
     <div class="detail-inner">
-      <section class="title-hero" style="${poster ? `--poster: url('${escapeAttribute(poster)}')` : ''}">
+      <section class="title-hero" style="${proxiedPoster ? `--poster: url('${escapeAttribute(proxiedPoster)}')` : ''}">
         <div class="title-copy">
           <span class="pill">${escapeHtml(title.type)}</span>
           <h2>${escapeHtml(displayTitle(title))}</h2>
@@ -328,6 +329,10 @@ function buildFallbackEmbed(title) {
 
 function formatNumber(value) {
   return Number(value ?? 0).toLocaleString('en-US');
+}
+
+function proxyImageUrl(url) {
+  return `/image-proxy?url=${encodeURIComponent(url)}`;
 }
 
 function escapeHtml(value) {

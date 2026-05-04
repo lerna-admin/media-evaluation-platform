@@ -32,6 +32,10 @@ const server = createServer(async (request, response) => {
       return servePublic(response, url.pathname === '/' ? '/index.html' : url.pathname.replace('/public', ''));
     }
 
+    if (request.method === 'GET' && url.pathname === '/image-proxy') {
+      return proxyImage(response, requiredParam(url, 'url'));
+    }
+
     if (route === 'GET /health') {
       return json(response, 200, { status: 'ok' });
     }
@@ -246,6 +250,42 @@ async function servePublic(response, pathname) {
     'content-type': contentType(filePath)
   });
   response.end(content);
+}
+
+async function proxyImage(response, sourceUrl) {
+  const parsed = new URL(sourceUrl);
+  if (!['https:', 'http:'].includes(parsed.protocol)) {
+    const error = new Error('Unsupported image URL protocol.');
+    error.status = 400;
+    throw error;
+  }
+
+  const upstream = await fetch(parsed, {
+    headers: {
+      accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+    }
+  });
+
+  if (!upstream.ok) {
+    const error = new Error(`Image request failed with HTTP ${upstream.status}`);
+    error.status = upstream.status;
+    throw error;
+  }
+
+  const contentTypeHeader = upstream.headers.get('content-type') ?? 'image/jpeg';
+  if (!contentTypeHeader.startsWith('image/')) {
+    const error = new Error('URL did not return an image.');
+    error.status = 400;
+    throw error;
+  }
+
+  const body = Buffer.from(await upstream.arrayBuffer());
+  response.writeHead(200, {
+    ...securityHeaders(),
+    'cache-control': 'public, max-age=86400',
+    'content-type': contentTypeHeader
+  });
+  response.end(body);
 }
 
 function securityHeaders() {
