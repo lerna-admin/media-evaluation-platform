@@ -94,8 +94,8 @@ async function searchRemoteCatalog() {
 }
 
 function renderRemoteResults(query) {
-  elements.count.textContent = `${state.remoteResults.length} remote matches for "${query}"`;
-  elements.items.innerHTML = state.remoteResults
+  const localResults = getFilteredLocalTitles();
+  const remoteCards = state.remoteResults
     .map((title, index) => {
       const poster = title.posterUrl;
       return `
@@ -110,6 +110,11 @@ function renderRemoteResults(query) {
       `;
     })
     .join('');
+  const localCards = renderLocalCards(localResults);
+  const total = localResults.length + state.remoteResults.length;
+
+  elements.count.textContent = `${total} matches for "${query}"`;
+  elements.items.innerHTML = `${localCards}${remoteCards}`;
 
   elements.items.querySelectorAll('[data-remote-index]').forEach((item) => {
     item.addEventListener('click', () => {
@@ -119,13 +124,14 @@ function renderRemoteResults(query) {
       renderDetail();
     });
   });
+  bindLocalCardEvents();
 }
 
 function scheduleRemoteSearchIfNeeded() {
   clearTimeout(state.remoteSearchTimer);
 
   const query = elements.search.value.trim();
-  if (state.localResultCount > 0 || query.length < 3) return;
+  if (query.length < 3) return;
 
   state.remoteSearchTimer = setTimeout(() => {
     if (state.lastRemoteQuery === query.toLowerCase()) return;
@@ -136,10 +142,24 @@ function scheduleRemoteSearchIfNeeded() {
 
 function renderCatalog() {
   const query = elements.search.value.trim().toLowerCase();
+  const filtered = getFilteredLocalTitles();
+
+  state.localResultCount = filtered.length;
+  elements.count.textContent = `${filtered.length} items`;
+  elements.items.innerHTML = renderLocalCards(filtered);
+  bindLocalCardEvents();
+
+  if (filtered.length === 0 && query.length >= 3) {
+    elements.items.innerHTML = '<div class="empty">Searching IMDb/TMDB...</div>';
+  }
+}
+
+function getFilteredLocalTitles() {
+  const query = elements.search.value.trim().toLowerCase();
   const type = elements.typeFilter.value;
   const titles = state.catalog?.titles ?? [];
 
-  const filtered = titles.filter((title) => {
+  return titles.filter((title) => {
     const haystack = [
       title.title,
       title.showTitle,
@@ -151,10 +171,10 @@ function renderCatalog() {
 
     return (type === 'all' || title.type === type) && (!query || haystack.includes(query));
   });
+}
 
-  state.localResultCount = filtered.length;
-  elements.count.textContent = `${filtered.length} items`;
-  elements.items.innerHTML = filtered
+function renderLocalCards(titles) {
+  return titles
     .map((title) => {
       const active = state.selected?.catalogKey === title.catalogKey ? ' active' : '';
       const poster = title.metadata?.posterUrl;
@@ -170,18 +190,17 @@ function renderCatalog() {
       `;
     })
     .join('');
+}
 
+function bindLocalCardEvents() {
   elements.items.querySelectorAll('.item').forEach((item) => {
+    if (!item.dataset.key) return;
     item.addEventListener('click', () => {
-      state.selected = titles.find((title) => title.catalogKey === item.dataset.key);
+      state.selected = (state.catalog?.titles ?? []).find((title) => title.catalogKey === item.dataset.key);
       renderCatalog();
       renderDetail();
     });
   });
-
-  if (filtered.length === 0 && query.length >= 3) {
-    elements.items.innerHTML = '<div class="empty">No local results. Searching IMDb/TMDB...</div>';
-  }
 }
 
 function renderDetail() {
