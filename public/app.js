@@ -1,7 +1,11 @@
 const state = {
   catalog: null,
   selected: null,
-  remoteResults: []
+  remoteResults: [],
+  profiles: loadProfiles(),
+  activeProfileId: localStorage.getItem('mep_active_profile') || 'main',
+  remoteSearchTimer: null,
+  lastRemoteQuery: ''
 };
 
 const elements = {
@@ -9,7 +13,13 @@ const elements = {
   pages: document.querySelector('#pages'),
   search: document.querySelector('#search'),
   typeFilter: document.querySelector('#typeFilter'),
-  remoteSearch: document.querySelector('#remoteSearch'),
+  tabs: document.querySelectorAll('[data-type-tab]'),
+  activeProfileLabel: document.querySelector('#activeProfileLabel'),
+  profilesDialog: document.querySelector('#profilesDialog'),
+  profilesList: document.querySelector('#profilesList'),
+  manageProfiles: document.querySelector('#manageProfiles'),
+  createProfile: document.querySelector('#createProfile'),
+  newProfileName: document.querySelector('#newProfileName'),
   items: document.querySelector('#items'),
   count: document.querySelector('#count'),
   detail: document.querySelector('#detail')
@@ -19,12 +29,33 @@ document.querySelectorAll('[data-import]').forEach((button) => {
   button.addEventListener('click', () => importCatalog(button.dataset.import));
 });
 
-elements.search.addEventListener('input', renderCatalog);
-elements.typeFilter.addEventListener('change', renderCatalog);
-elements.remoteSearch.addEventListener('click', searchRemoteCatalog);
+elements.search.addEventListener('input', () => {
+  renderCatalog();
+  scheduleRemoteSearchIfNeeded();
+});
+elements.typeFilter.addEventListener('change', () => {
+  syncTabs(elements.typeFilter.value);
+  renderCatalog();
+  scheduleRemoteSearchIfNeeded();
+});
+elements.tabs.forEach((tab) => {
+  tab.addEventListener('click', () => {
+    elements.typeFilter.value = tab.dataset.typeTab;
+    syncTabs(tab.dataset.typeTab);
+    renderCatalog();
+    scheduleRemoteSearchIfNeeded();
+  });
+});
+elements.manageProfiles.addEventListener('click', () => {
+  renderProfiles();
+  elements.profilesDialog.showModal();
+});
+elements.createProfile.addEventListener('click', createProfile);
 
-await loadStats();
+ensureActiveProfile();
+renderProfileLabel();
 await loadCatalog();
+await loadStats();
 
 async function loadStats() {
   try {
@@ -36,7 +67,12 @@ async function loadStats() {
       Episodes: ${formatNumber(stats.content_library?.episodes)}
     `;
   } catch (error) {
-    elements.stats.textContent = `Stats unavailable: ${error.message}`;
+    elements.stats.innerHTML = `
+      <strong>Catalog Status</strong><br />
+      VidAPI connected<br />
+      Provider stats unavailable<br />
+      Local items: ${formatNumber(state.catalog?.titles?.length ?? 0)}
+    `;
   }
 }
 
@@ -59,11 +95,10 @@ async function importCatalog(kind) {
 async function searchRemoteCatalog() {
   const query = elements.search.value.trim();
   if (!query) {
-    elements.count.textContent = 'Type a search term first';
     return;
   }
 
-  elements.count.textContent = `Searching IMDb/TMDB for "${query}"...`;
+  elements.count.textContent = `No local results. Searching IMDb/TMDB for "${query}"...`;
 
   try {
     const result = await api(`/providers/search?q=${encodeURIComponent(query)}`);
@@ -107,6 +142,19 @@ function renderRemoteResults(query) {
   });
 }
 
+function scheduleRemoteSearchIfNeeded() {
+  clearTimeout(state.remoteSearchTimer);
+
+  const query = elements.search.value.trim();
+  if (state.localResultCount > 0 || query.length < 3) return;
+
+  state.remoteSearchTimer = setTimeout(() => {
+    if (state.lastRemoteQuery === query.toLowerCase()) return;
+    state.lastRemoteQuery = query.toLowerCase();
+    searchRemoteCatalog();
+  }, 450);
+}
+
 function renderCatalog() {
   const query = elements.search.value.trim().toLowerCase();
   const type = elements.typeFilter.value;
@@ -125,6 +173,7 @@ function renderCatalog() {
     return (type === 'all' || title.type === type) && (!query || haystack.includes(query));
   });
 
+  state.localResultCount = filtered.length;
   elements.count.textContent = `${filtered.length} items`;
   elements.items.innerHTML = filtered
     .map((title) => {
@@ -150,6 +199,10 @@ function renderCatalog() {
       renderDetail();
     });
   });
+
+  if (filtered.length === 0 && query.length >= 3) {
+    elements.items.innerHTML = '<div class="empty">No local results. Searching IMDb/TMDB...</div>';
+  }
 }
 
 function renderDetail() {
@@ -209,8 +262,17 @@ function renderDetail() {
           <input id="subLang" placeholder="es" />
         </label>
         <label>
-          Auto subtitle language
-          <input id="dsLang" placeholder="es" />
+          Subtitle language
+          <select id="dsLang">
+            <option value="">Auto</option>
+            <option value="en">English</option>
+            <option value="es">Spanish</option>
+            <option value="ja">Japanese</option>
+            <option value="pt">Portuguese</option>
+            <option value="fr">French</option>
+            <option value="de">German</option>
+            <option value="it">Italian</option>
+          </select>
         </label>
         <label>
           Resume at seconds
@@ -333,6 +395,73 @@ function formatNumber(value) {
 
 function proxyImageUrl(url) {
   return `/image-proxy?url=${encodeURIComponent(url)}`;
+}
+
+function loadProfiles() {
+  const stored = localStorage.getItem('mep_profiles');
+  if (stored) return JSON.parse(stored);
+  return [{ id: 'main', name: 'Main profile' }];
+}
+
+function saveProfiles() {
+  localStorage.setItem('mep_profiles', JSON.stringify(state.profiles));
+  localStorage.setItem('mep_active_profile', state.activeProfileId);
+}
+
+function ensureActiveProfile() {
+  if (state.profiles.some((profile) => profile.id === state.activeProfileId)) return;
+  state.activeProfileId = state.profiles[0]?.id ?? 'main';
+  saveProfiles();
+}
+
+function renderProfileLabel() {
+  const profile = state.profiles.find((entry) => entry.id === state.activeProfileId);
+  elements.activeProfileLabel.textContent = profile?.name ?? 'Main profile';
+}
+
+function renderProfiles() {
+  elements.profilesList.innerHTML = state.profiles
+    .map((profile) => {
+      const active = profile.id === state.activeProfileId ? ' active' : '';
+      return `
+        <button type="button" class="profile-card${active}" data-profile-id="${escapeAttribute(profile.id)}">
+          <span>${escapeHtml(profile.name)}</span>
+        </button>
+      `;
+    })
+    .join('');
+
+  elements.profilesList.querySelectorAll('[data-profile-id]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.activeProfileId = button.dataset.profileId;
+      saveProfiles();
+      renderProfileLabel();
+      renderProfiles();
+    });
+  });
+}
+
+function createProfile() {
+  const name = elements.newProfileName.value.trim();
+  if (!name) return;
+
+  const profile = {
+    id: `profile_${Date.now()}`,
+    name
+  };
+
+  state.profiles.push(profile);
+  state.activeProfileId = profile.id;
+  elements.newProfileName.value = '';
+  saveProfiles();
+  renderProfileLabel();
+  renderProfiles();
+}
+
+function syncTabs(type) {
+  elements.tabs.forEach((tab) => {
+    tab.classList.toggle('active', tab.dataset.typeTab === type);
+  });
 }
 
 function escapeHtml(value) {
