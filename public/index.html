@@ -16,10 +16,7 @@
           <button class="tab" data-type-tab="series">Series</button>
           <button class="tab" data-type-tab="episode">Episodes</button>
         </nav>
-        <div class="profile-switcher">
-          <span id="activeProfileLabel">Main profile</span>
-          <button class="secondary compact" id="manageProfiles">Profiles</button>
-        </div>
+        <div class="service-state">Search-only catalog</div>
       </header>
 
       <section class="hero">
@@ -32,7 +29,8 @@
       </section>
 
       <section class="toolbar">
-        <div class="imports">
+        <details class="imports">
+          <summary>Catalog tools</summary>
           <label>
             Pages
             <input id="pages" type="number" min="1" max="10" value="1" />
@@ -40,7 +38,7 @@
           <button data-import="latest-movies">Import Movies</button>
           <button data-import="latest-tvshows">Import Series</button>
           <button data-import="latest-episodes">Import Episodes</button>
-        </div>
+        </details>
         <div class="filters">
           <input id="search" type="search" placeholder="Search title, IMDb, TMDB..." />
           <select id="typeFilter" aria-label="Content type">
@@ -66,20 +64,6 @@
         </section>
       </section>
     </main>
-
-    <dialog id="profilesDialog" class="profiles-dialog">
-      <form method="dialog">
-        <div class="dialog-header">
-          <h2>Profiles</h2>
-          <button class="secondary compact">Close</button>
-        </div>
-        <div id="profilesList" class="profiles-list"></div>
-        <div class="profile-create">
-          <input id="newProfileName" placeholder="New profile name" />
-          <button type="button" id="createProfile">Create</button>
-        </div>
-      </form>
-    </dialog>
 
     <script type="module" src="/public/app.js"></script>
   </body>

@@ -129,15 +129,14 @@ label {
   color: white;
 }
 
-.profile-switcher {
+.service-state {
   align-items: center;
-  display: flex;
-  gap: 0.7rem;
-}
-
-#activeProfileLabel {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
   color: var(--soft);
-  font-size: 0.92rem;
+  display: flex;
+  font-size: 0.86rem;
+  padding: 0.55rem 0.85rem;
 }
 
 .hero {
@@ -214,6 +213,18 @@ h1 {
   flex-wrap: wrap;
   gap: 0.65rem;
   padding: 0.7rem;
+}
+
+.imports summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-weight: 800;
+  list-style: none;
+  padding: 0.65rem 0.8rem;
+}
+
+.imports[open] {
+  align-items: end;
 }
 
 .imports button {
@@ -456,44 +467,6 @@ code {
   overflow-wrap: anywhere;
 }
 
-.profiles-dialog {
-  border: 1px solid var(--line);
-  border-radius: 1.2rem;
-  background: var(--surface);
-  box-shadow: var(--shadow);
-  color: var(--text);
-  width: min(34rem, calc(100vw - 2rem));
-}
-
-.profiles-dialog::backdrop {
-  background: rgba(0, 0, 0, 0.72);
-}
-
-.dialog-header,
-.profile-create {
-  align-items: center;
-  display: flex;
-  gap: 0.75rem;
-  justify-content: space-between;
-}
-
-.profiles-list {
-  display: grid;
-  gap: 0.75rem;
-  margin: 1rem 0;
-}
-
-.profile-card {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text);
-  justify-content: start;
-  text-align: left;
-}
-
-.profile-card.active {
-  outline: 2px solid var(--brand);
-}
-
 .error {
   color: #ff7180;
 }
@@ -509,7 +482,7 @@ code {
     grid-template-columns: 1fr;
   }
 
-  .profile-switcher,
+  .service-state,
   .filters {
     justify-content: space-between;
   }

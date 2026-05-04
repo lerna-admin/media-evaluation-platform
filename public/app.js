@@ -2,8 +2,6 @@ const state = {
   catalog: null,
   selected: null,
   remoteResults: [],
-  profiles: loadProfiles(),
-  activeProfileId: localStorage.getItem('mep_active_profile') || 'main',
   remoteSearchTimer: null,
   lastRemoteQuery: ''
 };
@@ -14,12 +12,6 @@ const elements = {
   search: document.querySelector('#search'),
   typeFilter: document.querySelector('#typeFilter'),
   tabs: document.querySelectorAll('[data-type-tab]'),
-  activeProfileLabel: document.querySelector('#activeProfileLabel'),
-  profilesDialog: document.querySelector('#profilesDialog'),
-  profilesList: document.querySelector('#profilesList'),
-  manageProfiles: document.querySelector('#manageProfiles'),
-  createProfile: document.querySelector('#createProfile'),
-  newProfileName: document.querySelector('#newProfileName'),
   items: document.querySelector('#items'),
   count: document.querySelector('#count'),
   detail: document.querySelector('#detail')
@@ -46,14 +38,6 @@ elements.tabs.forEach((tab) => {
     scheduleRemoteSearchIfNeeded();
   });
 });
-elements.manageProfiles.addEventListener('click', () => {
-  renderProfiles();
-  elements.profilesDialog.showModal();
-});
-elements.createProfile.addEventListener('click', createProfile);
-
-ensureActiveProfile();
-renderProfileLabel();
 await loadCatalog();
 await loadStats();
 
@@ -128,15 +112,10 @@ function renderRemoteResults(query) {
     .join('');
 
   elements.items.querySelectorAll('[data-remote-index]').forEach((item) => {
-    item.addEventListener('click', async () => {
+    item.addEventListener('click', () => {
       const remote = state.remoteResults[Number(item.dataset.remoteIndex)];
-      const imported = await api('/catalog/import/search-result', {
-        method: 'POST',
-        body: JSON.stringify(remote)
-      });
-      await loadCatalog();
-      state.selected = (state.catalog?.titles ?? []).find((title) => title.catalogKey === imported.catalogKey);
-      renderCatalog();
+      state.selected = normalizeRemoteSelection(remote);
+      renderRemoteResults(elements.search.value.trim());
       renderDetail();
     });
   });
@@ -214,13 +193,13 @@ function renderDetail() {
 
   const providerPage = title.externalPages?.find((page) => page.label === 'vidapi');
   const baseEmbed = providerPage?.url ?? buildFallbackEmbed(title);
-  const poster = title.metadata?.posterUrl;
+  const poster = title.metadata?.posterUrl || title.posterUrl;
   const proxiedPoster = poster ? proxyImageUrl(poster) : '';
   const categories = (title.categories ?? []).join(' / ') || 'Uncategorized';
-  const rating = title.metadata?.rating ? `${title.metadata.rating} rating` : 'No rating yet';
+  const rating = title.metadata?.rating ? `${title.metadata.rating} rating` : '';
   const description = title.metadata?.airDate
     ? `Air date: ${title.metadata.airDate}`
-    : `Catalog entry sourced by ${title.metadata?.provider ?? 'manual'} using IMDb/TMDB identifiers.`;
+    : title.description || 'Search result loaded on demand. Nothing is saved unless catalog tools are used.';
 
   elements.detail.innerHTML = `
     <div class="detail-inner">
@@ -397,71 +376,39 @@ function proxyImageUrl(url) {
   return `/image-proxy?url=${encodeURIComponent(url)}`;
 }
 
-function loadProfiles() {
-  const stored = localStorage.getItem('mep_profiles');
-  if (stored) return JSON.parse(stored);
-  return [{ id: 'main', name: 'Main profile' }];
-}
-
-function saveProfiles() {
-  localStorage.setItem('mep_profiles', JSON.stringify(state.profiles));
-  localStorage.setItem('mep_active_profile', state.activeProfileId);
-}
-
-function ensureActiveProfile() {
-  if (state.profiles.some((profile) => profile.id === state.activeProfileId)) return;
-  state.activeProfileId = state.profiles[0]?.id ?? 'main';
-  saveProfiles();
-}
-
-function renderProfileLabel() {
-  const profile = state.profiles.find((entry) => entry.id === state.activeProfileId);
-  elements.activeProfileLabel.textContent = profile?.name ?? 'Main profile';
-}
-
-function renderProfiles() {
-  elements.profilesList.innerHTML = state.profiles
-    .map((profile) => {
-      const active = profile.id === state.activeProfileId ? ' active' : '';
-      return `
-        <button type="button" class="profile-card${active}" data-profile-id="${escapeAttribute(profile.id)}">
-          <span>${escapeHtml(profile.name)}</span>
-        </button>
-      `;
-    })
-    .join('');
-
-  elements.profilesList.querySelectorAll('[data-profile-id]').forEach((button) => {
-    button.addEventListener('click', () => {
-      state.activeProfileId = button.dataset.profileId;
-      saveProfiles();
-      renderProfileLabel();
-      renderProfiles();
-    });
-  });
-}
-
-function createProfile() {
-  const name = elements.newProfileName.value.trim();
-  if (!name) return;
-
-  const profile = {
-    id: `profile_${Date.now()}`,
-    name
-  };
-
-  state.profiles.push(profile);
-  state.activeProfileId = profile.id;
-  elements.newProfileName.value = '';
-  saveProfiles();
-  renderProfileLabel();
-  renderProfiles();
-}
-
 function syncTabs(type) {
   elements.tabs.forEach((tab) => {
     tab.classList.toggle('active', tab.dataset.typeTab === type);
   });
+}
+
+function normalizeRemoteSelection(remote) {
+  const type = remote.type === 'series' ? 'series' : 'movie';
+  const id = remote.imdbId || remote.tmdbId;
+
+  return {
+    catalogKey: `${type}:${remote.imdbId ? 'imdb' : 'tmdb'}:${id}`,
+    type,
+    imdbId: remote.imdbId || '',
+    tmdbId: remote.tmdbId || '',
+    title: remote.title,
+    year: remote.year,
+    categories: [],
+    description: remote.description,
+    posterUrl: remote.posterUrl,
+    metadata: {
+      provider: remote.provider,
+      posterUrl: remote.posterUrl
+    },
+    externalPages: [
+      {
+        label: 'vidapi',
+        url: type === 'movie'
+          ? `https://vaplayer.ru/embed/movie/${encodeURIComponent(id)}`
+          : `https://vaplayer.ru/embed/tv/${encodeURIComponent(id)}`
+      }
+    ]
+  };
 }
 
 function escapeHtml(value) {
